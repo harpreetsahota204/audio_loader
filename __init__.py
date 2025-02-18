@@ -21,6 +21,15 @@ sio = fou.lazy_import("scipy.io")
 ss = fou.lazy_import("scipy.signal")
 plt = fou.lazy_import("matplotlib.pyplot")
 
+def _handle_calling(uri, sample_collection, input_path, output_dir, name, delegate=False):
+    ctx = dict(dataset=sample_collection)
+    params = dict(
+        input_path=input_path,
+        output_dir=output_dir,
+        name=name,
+        delegate=delegate
+    )
+    return foo.execute_operator(uri, ctx, params=params)
 
 class LoadAudio(foo.Operator):
     @property
@@ -51,8 +60,38 @@ class LoadAudio(foo.Operator):
     def execute(self, ctx):
         ### Your logic here ###
         _audio_loader(ctx)
-    
         return {}
+    
+    def __call__(
+        self, 
+        sample_collection, 
+        input_path, 
+        output_dir, 
+        name, 
+        delegate=False
+        ):
+        """
+        Args:
+        sample_collection: a FiftyOne dataset or view
+        input_path (str): path to directory containing audio files
+        output_dir (str): path to directory for saving spectrograms
+        name (str): name for the new dataset
+        delegate (bool, optional): whether to delegate execution. Defaults to False
+        
+        Returns:
+        the results of executing the operator
+        """
+        # Convert paths to format expected by resolve_input
+        input_path_dict = {"absolute_path": input_path}
+        output_dir_dict = {"absolute_path": output_dir}
+        return _handle_calling(
+            self.uri,
+            sample_collection,
+            input_path_dict,
+            output_dir_dict,
+            name,
+            delegate
+            )
     
 def _audio_loader_inputs(ctx, inputs):
     file_explorer = types.FileExplorerView(
@@ -62,7 +101,7 @@ def _audio_loader_inputs(ctx, inputs):
     prop = inputs.file(
         "input_path",
         label="Input path",
-        description=f"Choose a dir that contains sound data in the format of AudioClassificationTree. UPDATE FOR DOCS",
+        description=f"Choose a directory with .wav files in the format of AudioClassificationTree.",
         required=True,
         view=file_explorer,
     )
@@ -78,7 +117,7 @@ def _audio_loader_inputs(ctx, inputs):
     inputs.file(
         "output_dir",
         label="Output directory",
-        description="Choose a directory to write the spectogram images",
+        description="Choose a directory to write the spectogram images. This can be the same directory as the input path.",
         required=True,
         view=file_explorer,
     )
@@ -116,7 +155,7 @@ def wav_to_spectrogram(wav_file,output_dir):
     plt.xlabel('Time [sec]')
     plt.title('Spectrogram')
     plt.colorbar(label='Intensity [dB]')
-    image_path = spectograms_path + "/" + wav_file.split("/")[-1].split(".")[0] + ".png"
+    image_path = spectograms_path + "/" + os.path.splitext(wav_file.split("/")[-1])[0] + ".png" # more robust way to get the file name
     plt.savefig(image_path)
     plt.close()
     image_path = os.path.abspath(image_path)
@@ -244,6 +283,9 @@ def _execution_mode(ctx, inputs):
 def _parse_path(ctx, key):
     value = ctx.params.get(key, None)
     return value.get("absolute_path", None) if value else None
+
+
+
 
 def register(plugin):
     plugin.register(LoadAudio)
